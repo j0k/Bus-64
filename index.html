@@ -67,56 +67,71 @@
   .algo-desc{font-size:12px; color:var(--muted); margin-top:6px; min-height:16px}
   a{color:var(--accent)}
   footer{color:var(--muted); font-size:12px; text-align:center; margin-top:8px}
+  .topbar{display:flex; justify-content:space-between; align-items:flex-start; gap:12px}
+  .lang{display:flex; gap:4px; background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:3px}
+  .lang button{
+    background:none; border:none; color:var(--muted); cursor:pointer;
+    font-size:12px; font-weight:600; padding:5px 10px; border-radius:6px;
+  }
+  .lang button.on{background:var(--accent2); color:#fff}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1><span class="lock">🔐</span> Online Crypter</h1>
-  <p class="sub">Шифрование в браузере на Web Crypto API. Ничего не отправляется на сервер — весь код работает локально.</p>
+  <div class="topbar">
+    <div>
+      <h1><span class="lock">🔐</span> Online Crypter</h1>
+    </div>
+    <div class="lang" id="lang">
+      <button data-lang="en">EN</button>
+      <button data-lang="ru">RU</button>
+    </div>
+  </div>
+  <p class="sub" data-i18n="sub"></p>
 
   <div class="card">
     <div class="row">
       <div class="col">
-        <label for="algo">Алгоритм</label>
+        <label for="algo" data-i18n="algoLabel"></label>
         <select id="algo">
-          <option value="AES-GCM">AES-256-GCM (рекомендуется)</option>
+          <option value="AES-GCM">AES-256-GCM</option>
           <option value="AES-CBC">AES-256-CBC + HMAC-SHA256</option>
           <option value="AES-CTR">AES-256-CTR + HMAC-SHA256</option>
         </select>
         <div class="algo-desc" id="algoDesc"></div>
       </div>
       <div class="col">
-        <label for="pass">Пароль (ключевая фраза)</label>
+        <label for="pass" data-i18n="passLabel"></label>
         <div class="pass-wrap">
-          <input id="pass" type="password" placeholder="Введите пароль" autocomplete="off" spellcheck="false">
-          <button class="toggle" id="passToggle" title="Показать/скрыть" type="button">👁</button>
+          <input id="pass" type="password" autocomplete="off" spellcheck="false">
+          <button class="toggle" id="passToggle" type="button">👁</button>
         </div>
       </div>
     </div>
-    <div class="hint">Ключ выводится из пароля через PBKDF2-SHA256 (210 000 итераций, случайная соль). Забыли пароль — расшифровать нельзя.</div>
+    <div class="hint" data-i18n="hint"></div>
   </div>
 
   <div class="card">
-    <label for="input">Текст</label>
-    <textarea id="input" placeholder="Введите открытый текст для шифрования или base64 для расшифровки…" spellcheck="false"></textarea>
+    <label for="input" data-i18n="textLabel"></label>
+    <textarea id="input" spellcheck="false"></textarea>
     <div class="btns">
-      <button class="act" id="btnEnc">🔒 Зашифровать</button>
-      <button class="act sec" id="btnDec">🔓 Расшифровать</button>
+      <button class="act" id="btnEnc"></button>
+      <button class="act sec" id="btnDec"></button>
     </div>
     <div class="status" id="status"></div>
   </div>
 
   <div class="card">
-    <label for="output">Результат (base64)</label>
-    <textarea id="output" placeholder="Результат появится здесь…" spellcheck="false" readonly></textarea>
+    <label for="output" data-i18n="outLabel"></label>
+    <textarea id="output" spellcheck="false" readonly></textarea>
     <div class="mini">
-      <button id="btnCopy">📋 Копировать</button>
-      <button id="btnSwap">↕ В поле ввода</button>
-      <button id="btnClear">🗑 Очистить</button>
+      <button id="btnCopy"></button>
+      <button id="btnSwap"></button>
+      <button id="btnClear"></button>
     </div>
   </div>
 
-  <footer>Формат: <code>[версия][алгоритм][соль 16][iv][шифртекст](+HMAC)</code> → base64. Работает офлайн.</footer>
+  <footer data-i18n="footer"></footer>
 </div>
 
 <script>
@@ -126,11 +141,11 @@
   const enc = new TextEncoder();
   const dec = new TextDecoder();
 
-  const MAGIC = 0x43; // 'C' — маркер формата
+  const MAGIC = 0x43; // 'C' — format marker
   const ALGOS = {
-    "AES-GCM": {id:1, ivLen:12, mac:false, desc:"Аутентифицированное шифрование (AEAD). Целостность встроена в алгоритм. Лучший выбор по умолчанию."},
-    "AES-CBC": {id:2, ivLen:16, mac:true,  desc:"Классический CBC. Для защиты от подмены добавлен HMAC-SHA256 (Encrypt-then-MAC)."},
-    "AES-CTR": {id:3, ivLen:16, mac:true,  desc:"Потоковый режим CTR. Целостность обеспечивается отдельным HMAC-SHA256."}
+    "AES-GCM": {id:1, ivLen:12, mac:false},
+    "AES-CBC": {id:2, ivLen:16, mac:true },
+    "AES-CTR": {id:3, ivLen:16, mac:true }
   };
   const ALGO_BY_ID = Object.fromEntries(Object.entries(ALGOS).map(([n,v])=>[v.id,n]));
 
@@ -206,15 +221,17 @@
     return toB64(payload);
   }
 
-  // ---------- расшифровка ----------
+  const err = key => { const e = new Error(key); e.i18n = key; return e; };
+
+  // ---------- decryption ----------
   async function decrypt(password, b64){
     let raw;
     try { raw = fromB64(b64); }
-    catch { throw new Error("Некорректный base64 на входе."); }
-    if (raw.length < 22 || raw[0] !== MAGIC) throw new Error("Не распознан формат данных.");
+    catch { throw err("eB64"); }
+    if (raw.length < 22 || raw[0] !== MAGIC) throw err("eFormat");
 
     const algoName = ALGO_BY_ID[raw[1]];
-    if (!algoName) throw new Error("Неизвестный алгоритм в данных.");
+    if (!algoName) throw err("eAlgo");
     const spec = ALGOS[algoName];
 
     const iterations = new DataView(raw.buffer, raw.byteOffset+2, 4).getUint32(0, false);
@@ -225,11 +242,11 @@
     const { encRaw, macRaw } = await deriveKeys(password, salt, iterations, spec.mac);
 
     if (spec.mac){
-      if (ct.length < 32) throw new Error("Данные повреждены (нет HMAC).");
+      if (ct.length < 32) throw err("eHmacMissing");
       const tag = ct.slice(ct.length - 32);
       ct = ct.slice(0, ct.length - 32);
       const expect = await hmac(macRaw, raw.slice(0, raw.length - 32));
-      if (!timingSafeEqual(tag, expect)) throw new Error("Проверка целостности не пройдена: неверный пароль или данные изменены.");
+      if (!timingSafeEqual(tag, expect)) throw err("eIntegrity");
     }
 
     const key = await crypto.subtle.importKey("raw", encRaw, {name:algoName}, false, ["decrypt"]);
@@ -240,38 +257,146 @@
 
     let ptBuf;
     try { ptBuf = await crypto.subtle.decrypt(params, key, ct); }
-    catch { throw new Error("Не удалось расшифровать: неверный пароль или повреждённые данные."); }
+    catch { throw err("eDecrypt"); }
     return dec.decode(ptBuf);
   }
 
-  // ---------- UI ----------
-  const setStatus = (msg, kind="") => {
-    const el = $("status"); el.textContent = msg; el.className = "status " + kind;
+  // ---------- i18n ----------
+  const I18N = {
+    en: {
+      sub: "In-browser encryption via the Web Crypto API. Nothing is sent to a server — all code runs locally.",
+      algoLabel: "Algorithm",
+      passLabel: "Password (passphrase)",
+      passPh: "Enter password",
+      passToggle: "Show / hide",
+      hint: "The key is derived from your password with PBKDF2-SHA256 (210,000 iterations, random salt). Lose the password and the data cannot be recovered.",
+      textLabel: "Text",
+      textPh: "Enter plaintext to encrypt, or base64 to decrypt…",
+      btnEnc: "🔒 Encrypt",
+      btnDec: "🔓 Decrypt",
+      outLabel: "Result (base64)",
+      outPh: "Result appears here…",
+      btnCopy: "📋 Copy",
+      btnSwap: "↕ To input",
+      btnClear: "🗑 Clear",
+      footer: "Format: [version][algorithm][salt 16][iv][ciphertext](+HMAC) → base64. Works offline.",
+      descGCM: "Authenticated encryption (AEAD). Integrity is built into the algorithm. Best default choice.",
+      descCBC: "Classic CBC. An HMAC-SHA256 (Encrypt-then-MAC) is added to prevent tampering.",
+      descCTR: "Stream mode CTR. Integrity is provided by a separate HMAC-SHA256.",
+      noPass: "Enter a password.",
+      noText: "The text field is empty.",
+      encrypting: "Encrypting…",
+      decrypting: "Decrypting…",
+      doneEnc: "Done — encrypted",
+      doneDec: "Done — decrypted.",
+      copied: "Copied to clipboard.",
+      swapped: "Result moved to the input field.",
+      noCrypto: "Web Crypto is unavailable. Open the page over HTTPS (GitHub Pages works).",
+      eB64: "Invalid base64 input.",
+      eFormat: "Unrecognized data format.",
+      eAlgo: "Unknown algorithm in data.",
+      eHmacMissing: "Data is corrupted (HMAC missing).",
+      eIntegrity: "Integrity check failed: wrong password or the data was modified.",
+      eDecrypt: "Decryption failed: wrong password or corrupted data.",
+      eEnc: "Encryption error."
+    },
+    ru: {
+      sub: "Шифрование в браузере на Web Crypto API. Ничего не отправляется на сервер — весь код работает локально.",
+      algoLabel: "Алгоритм",
+      passLabel: "Пароль (ключевая фраза)",
+      passPh: "Введите пароль",
+      passToggle: "Показать / скрыть",
+      hint: "Ключ выводится из пароля через PBKDF2-SHA256 (210 000 итераций, случайная соль). Забыли пароль — расшифровать нельзя.",
+      textLabel: "Текст",
+      textPh: "Введите открытый текст для шифрования или base64 для расшифровки…",
+      btnEnc: "🔒 Зашифровать",
+      btnDec: "🔓 Расшифровать",
+      outLabel: "Результат (base64)",
+      outPh: "Результат появится здесь…",
+      btnCopy: "📋 Копировать",
+      btnSwap: "↕ В поле ввода",
+      btnClear: "🗑 Очистить",
+      footer: "Формат: [версия][алгоритм][соль 16][iv][шифртекст](+HMAC) → base64. Работает офлайн.",
+      descGCM: "Аутентифицированное шифрование (AEAD). Целостность встроена в алгоритм. Лучший выбор по умолчанию.",
+      descCBC: "Классический CBC. Для защиты от подмены добавлен HMAC-SHA256 (Encrypt-then-MAC).",
+      descCTR: "Потоковый режим CTR. Целостность обеспечивается отдельным HMAC-SHA256.",
+      noPass: "Введите пароль.",
+      noText: "Поле текста пустое.",
+      encrypting: "Шифрую…",
+      decrypting: "Расшифровываю…",
+      doneEnc: "Готово — зашифровано",
+      doneDec: "Готово — расшифровано.",
+      copied: "Скопировано в буфер.",
+      swapped: "Результат перенесён в поле ввода.",
+      noCrypto: "Web Crypto недоступен. Откройте страницу по HTTPS (GitHub Pages подходит).",
+      eB64: "Некорректный base64 на входе.",
+      eFormat: "Не распознан формат данных.",
+      eAlgo: "Неизвестный алгоритм в данных.",
+      eHmacMissing: "Данные повреждены (нет HMAC).",
+      eIntegrity: "Проверка целостности не пройдена: неверный пароль или данные изменены.",
+      eDecrypt: "Не удалось расшифровать: неверный пароль или повреждённые данные.",
+      eEnc: "Ошибка шифрования."
+    }
   };
-  const updateDesc = () => { $("algoDesc").textContent = ALGOS[$("algo").value].desc; };
+  const DESC_KEY = {"AES-GCM":"descGCM","AES-CBC":"descCBC","AES-CTR":"descCTR"};
+  let lang = localStorage.getItem("crypterLang")
+    || ((navigator.language||"").slice(0,2) === "ru" ? "ru" : "en");
+  if (!I18N[lang]) lang = "en";
+  const t = k => (I18N[lang][k] ?? k);
+
+  // ---------- UI ----------
+  let statusKey = "", statusKind = "", statusExtra = "";
+  const setStatus = (key, kind="", extra="") => {
+    statusKey = key; statusKind = kind; statusExtra = extra;
+    const el = $("status");
+    el.textContent = key ? t(key) + extra : "";
+    el.className = "status " + kind;
+  };
+  const updateDesc = () => { $("algoDesc").textContent = t(DESC_KEY[$("algo").value]); };
+
+  function applyLang(){
+    document.documentElement.lang = lang;
+    document.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
+    $("pass").placeholder = t("passPh");
+    $("passToggle").title = t("passToggle");
+    $("input").placeholder = t("textPh");
+    $("output").placeholder = t("outPh");
+    $("btnEnc").textContent = t("btnEnc");
+    $("btnDec").textContent = t("btnDec");
+    $("btnCopy").textContent = t("btnCopy");
+    $("btnSwap").textContent = t("btnSwap");
+    $("btnClear").textContent = t("btnClear");
+    document.querySelectorAll("#lang button").forEach(b => b.classList.toggle("on", b.dataset.lang === lang));
+    updateDesc();
+    if (statusKey) setStatus(statusKey, statusKind, statusExtra); // re-render current status in new language
+  }
+  $("lang").addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    lang = b.dataset.lang; localStorage.setItem("crypterLang", lang); applyLang();
+  });
 
   const guard = () => {
-    if (!$("pass").value){ setStatus("Введите пароль.", "err"); return false; }
-    if (!$("input").value.trim()){ setStatus("Поле текста пустое.", "err"); return false; }
+    if (!$("pass").value){ setStatus("noPass", "err"); return false; }
+    if (!$("input").value.trim()){ setStatus("noText", "err"); return false; }
     return true;
   };
 
   $("btnEnc").addEventListener("click", async () => {
     if (!guard()) return;
-    setStatus("Шифрую…");
+    setStatus("encrypting");
     try {
       $("output").value = await encrypt($("algo").value, $("pass").value, $("input").value);
-      setStatus("Готово — зашифровано (" + $("algo").value + ").", "ok");
-    } catch(e){ setStatus(e.message || "Ошибка шифрования.", "err"); }
+      setStatus("doneEnc", "ok", " (" + $("algo").value + ").");
+    } catch(e){ setStatus(e.i18n || "eEnc", "err"); }
   });
 
   $("btnDec").addEventListener("click", async () => {
     if (!guard()) return;
-    setStatus("Расшифровываю…");
+    setStatus("decrypting");
     try {
       $("output").value = await decrypt($("pass").value, $("input").value);
-      setStatus("Готово — расшифровано.", "ok");
-    } catch(e){ setStatus(e.message || "Ошибка расшифровки.", "err"); }
+      setStatus("doneDec", "ok");
+    } catch(e){ setStatus(e.i18n || "eDecrypt", "err"); }
   });
 
   $("passToggle").addEventListener("click", () => {
@@ -279,23 +404,23 @@
   });
   $("btnCopy").addEventListener("click", async () => {
     if (!$("output").value) return;
-    try { await navigator.clipboard.writeText($("output").value); setStatus("Скопировано в буфер.", "ok"); }
-    catch { $("output").select(); document.execCommand("copy"); setStatus("Скопировано.", "ok"); }
+    try { await navigator.clipboard.writeText($("output").value); setStatus("copied", "ok"); }
+    catch { $("output").select(); document.execCommand("copy"); setStatus("copied", "ok"); }
   });
   $("btnSwap").addEventListener("click", () => {
     if (!$("output").value) return;
-    $("input").value = $("output").value; $("output").value = ""; setStatus("Результат перенесён в поле ввода.");
+    $("input").value = $("output").value; $("output").value = ""; setStatus("swapped");
   });
   $("btnClear").addEventListener("click", () => {
     $("input").value = $("output").value = ""; setStatus("");
   });
   $("algo").addEventListener("change", updateDesc);
 
+  applyLang();
   if (!window.crypto || !crypto.subtle){
-    setStatus("Web Crypto недоступен. Откройте страницу по HTTPS (GitHub Pages подходит).", "err");
+    setStatus("noCrypto", "err");
     $("btnEnc").disabled = $("btnDec").disabled = true;
   }
-  updateDesc();
 })();
 </script>
 </body>
